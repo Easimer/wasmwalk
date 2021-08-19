@@ -1,12 +1,49 @@
 #include <cstdio>
 #include <algorithm>
+#include <memory>
 
+#include "demangler.h"
 #include "wasmobj.h"
 
 enum SymbolKind {
     SYMBOL_FUNCTION = 0,
     SYMBOL_DATA = 1,
     SYMBOL_MAX
+};
+
+class Demangler {
+  public:
+    Demangler()
+        : mem(std::make_unique<u8[]>(1024 * 1024)), arena{mem.get(),
+                                                          1024 * 1024, 0} {}
+
+    void printDemangledName(const char* s) {
+        arena.FreeAll();
+        try {
+            auto dmres = demangler::demangle(
+                demangler::StringView::FromLiteral(s), arena);
+            demangler::printDemangledName(dmres);
+            printf("\n");
+        } catch (std::exception const &) {
+            printf("%s\n", s);
+        }
+    }
+
+    void printDemangledName(std::string const& s) {
+        arena.FreeAll();
+        try {
+            auto dmres = demangler::demangle(
+                demangler::StringView::FromString(s), arena);
+            demangler::printDemangledName(dmres);
+            printf("\n");
+        } catch (std::exception const &) {
+            printf("%s\n", s.c_str());
+        }
+    }
+
+  private:
+    std::unique_ptr<u8[]> mem;
+    demangler::Arena arena;
 };
 
 static void aggregateAndPrint(std::vector<wasmobj::Results> const &allResults, char **argv) {
@@ -36,16 +73,20 @@ static void aggregateAndPrint(std::vector<wasmobj::Results> const &allResults, c
                   return rhs.size < lhs.size;
               });
 
+    Demangler D;
     printf("symbols:\n");
     for (auto &sym : data) {
         printf("  - path: %s\n", sym.path);
-        printf("    name: %s\n", sym.name);
+        printf("    name: ");
+        D.printDemangledName(sym.name);
         printf("    kind: %d\n", sym.kind);
         printf("    size: %llu\n", sym.size);
     }
 }
 
 static void printResults(std::vector<wasmobj::Results> &allResults, char **argv) {
+    Demangler D;
+
     for (int idxResult = 0; idxResult < allResults.size(); ++idxResult) {
         auto &results = allResults[idxResult];
         auto *path = argv[idxResult + 1];
@@ -55,10 +96,12 @@ static void printResults(std::vector<wasmobj::Results> &allResults, char **argv)
         std::sort(results.data.begin(), results.data.end(),
                   [](auto &lhs, auto &rhs) { return rhs.size < lhs.size; });
 
+
         printf("%s:\n", path);
         printf("  functions:\n");
         for (auto &fun : results.functions) {
-            printf("    - name: %s\n", fun.name.c_str());
+            printf("    - name: ");
+            D.printDemangledName(fun.name);
             printf("      size: %llu\n", fun.size);
         }
         printf("  data:\n");
@@ -66,6 +109,7 @@ static void printResults(std::vector<wasmobj::Results> &allResults, char **argv)
             printf("    - name: %s\n", dat.name.c_str());
             printf("      size: %llu\n", dat.size);
         }
+
     }
 }
 

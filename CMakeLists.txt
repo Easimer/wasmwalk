@@ -10,6 +10,8 @@ target_sources(wasmwalk
     src/wasmobj.h
     src/reader.cpp
     src/reader.h
+    src/demangler.cpp
+    src/demangler.h
 
     src/types.h
     src/wasm.h
