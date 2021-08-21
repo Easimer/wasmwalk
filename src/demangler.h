@@ -216,12 +216,18 @@ struct TemplateArg {
         NESTED_NAME,
         LITERAL,
         TYPE,
+        LOCAL_NAME,
     } tag;
 
     union {
         Type type;
         NestedName name;
         Literal literal;
+        struct {
+            Encoding *function;
+            NestedName entityName;
+            unsigned discriminator;
+        } localName;
     };
 };
 

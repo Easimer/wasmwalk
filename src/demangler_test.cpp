@@ -4,6 +4,8 @@
 #include "demangler.h"
 
 static const char *signatures[] = {
+    "_ZN3nms5EventC2ERKS0_",
+    "NSt3__214__thread_proxyINS_5tupleIJNS_10unique_ptrINS_15__thread_structENS_14default_deleteIS3_EEEEZN3nms12ModuleThread11StartThreadERNS_7promiseIbEEE3$_0EEEEEPvSE_",
     "main",
     "__GLOBAL_sub_I_entry.cpp",
     "_Z4testIifEvT_T0_",

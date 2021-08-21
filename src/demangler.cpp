@@ -190,13 +190,13 @@ static Type ParseType(Context& ctx) {
         auto bareFunctionType = ParseBareFunctionType(ctx);
 
         if (!ctx.str.StartsWith('E'))
-            __debugbreak();
+            throw std::exception();
         ctx.str += 1;
         type.tag = Type::FUNCTION_POINTER;
         return type;
     }
 
-    __debugbreak();
+    throw std::exception();
 
     assert(ctx.str[0] != 'u');
     return type;
@@ -233,7 +233,7 @@ static Literal ParseLiteral(Context& ctx) {
                 ret.number.type = type.builtIn;
                 ret.number.valueUInteger = ((uint32_t)ctx.str[0] - '0');
             } else {
-                __debugbreak();
+                throw std::exception();
             }
             break;
         default:
@@ -371,6 +371,24 @@ static void ParseTemplateArgs(Context &ctx, TemplateArgs &args) {
             ParseTemplateArgs(ctx, args);
             assert(ctx.str[0] == 'E');
             ctx.str += 1;
+        } else if (ctx.str.StartsWith('Z')) {
+            // Local name
+            auto arg = AppendNewNode(ctx.arena, args);
+            arg->tag = TemplateArg::LOCAL_NAME;
+
+            ctx.str += 1;
+
+            arg->localName.function = ctx.arena->Alloc<Encoding>();
+            *arg->localName.function = ParseEncoding(ctx);
+
+            assert(ctx.str[0] == 'E');
+            ctx.str += 1;
+            if (ctx.str.StartsWith('s')) {
+                ctx.str += 1;
+            } else {
+                arg->localName.entityName = {};
+                ParseName(ctx, arg->localName.entityName, false);
+            }
         } else {
             auto arg = AppendNewNode(ctx.arena, args);
             arg->type = ParseType(ctx);
@@ -386,6 +404,11 @@ static TemplateArgs ParseTemplateArgs(Context &ctx) {
     ParseTemplateArgs(ctx, ret);
 
     return ret;
+}
+
+static bool IsBeginningOfAName(StringView const &s) {
+    return s.StartsWith('S') || s.StartsWith('I') || s.StartsWith('C') ||
+           s.StartsWith('D') || s.StartsWith('T') || IsDigit(s[0]);
 }
 
 static void ParseName(Context& ctx, NestedName& nestedName, bool isFunction) {
@@ -423,7 +446,7 @@ static void ParseName(Context& ctx, NestedName& nestedName, bool isFunction) {
             return;
         }
         ctx.str += 2;
-        __debugbreak();
+        throw std::exception();
     } else if (ctx.str[0] == 'D') {
         if (ctx.str[1] == '0') {
             // deleting dtor
@@ -442,6 +465,9 @@ static void ParseName(Context& ctx, NestedName& nestedName, bool isFunction) {
             ctx.str += 2;
             return;
         }
+    } else if (ctx.str.StartsWith('T')) {
+        // TODO: special-name
+        throw std::exception();
     } else {
         auto name = ReadLengthPrefixedString(ctx.str);
         auto node = AppendNewNode(ctx.arena, nestedName.name);
@@ -451,7 +477,7 @@ static void ParseName(Context& ctx, NestedName& nestedName, bool isFunction) {
     if (ctx.dict.qualifier.name.head == nullptr) {
         ctx.dict.qualifier = nestedName;
     } else {
-        if (!isFunction || IsDigit(ctx.str[0]) || ctx.str[0] == 'I') {
+        if (!isFunction || IsBeginningOfAName(ctx.str)) {
             auto dictEntry = AppendNewNode(ctx.arena, ctx.dict.entries);
             *dictEntry = nestedName;
         }
@@ -540,12 +566,8 @@ static BareFunctionType ParseBareFunctionType(Context& ctx) {
     while (ctx.str.NotEmpty() && !ctx.str.StartsWith('E')) {
         auto type = ParseType(ctx);
         assert(type.tag != Type::UNINITIALIZED);
-        if (ret.returnType.tag == Type::UNINITIALIZED) {
-            ret.returnType = type;
-        } else {
-            auto *node = AppendNewNode(ctx.arena, ret.argumentTypes);
-            *node = type;
-        }
+        auto *node = AppendNewNode(ctx.arena, ret.argumentTypes);
+        *node = type;
     }
 
     return ret;
@@ -659,6 +681,12 @@ const char *resolveBuiltinType(StringView const &s) {
 }
 
 void printType(Type const& type) {
+    if (type.qConst)
+        printf("const ");
+    if (type.qRestrict)
+        printf("restrict ");
+    if (type.qVolatile)
+        printf("volatile ");
     switch (type.tag) {
     case Type::BUILTIN:
         printf("%s", resolveBuiltinType(type.builtIn));
@@ -669,10 +697,22 @@ void printType(Type const& type) {
     case Type::FUNCTION_POINTER:
         printf("(funptr)");
         break;
+    default:
+        printf("(type)");
+        break;
     }
 
     for (int i = 0; i < type.levelsOfIndirection; i++) {
         printf("*");
+    }
+
+    switch (type.refQualifier) {
+    case REFQ_REF:
+        printf("&");
+        break;
+    case REFQ_REFREF:
+        printf("&&");
+        break;
     }
 }
 
@@ -722,8 +762,7 @@ void demangler::printNestedName(NestedName const& nestedName) {
         while (1) {
             switch (curArg->tag) {
             case TemplateArg::UNINITIALIZED:
-                __debugbreak();
-                break;
+                throw std::exception();
             case TemplateArg::LITERAL:
                 printLiteral(curArg->literal);
                 break;
@@ -759,6 +798,7 @@ void demangler::printEncoding(Encoding const &encoding) {
         printType(*curArg);
         if (curArg == encoding.bareFunctionType.argumentTypes.tail)
             break;
+        printf(", ");
         curArg = curArg->next;
     }
     printf(")");

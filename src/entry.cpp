@@ -11,6 +11,14 @@ enum SymbolKind {
     SYMBOL_MAX
 };
 
+struct Parameters {
+    bool flagAggregate = false;
+    bool flagDemangle = false;
+
+    unsigned argc = 0;
+    char **argv = nullptr;
+};
+
 class Demangler {
   public:
     Demangler()
@@ -32,10 +40,16 @@ class Demangler {
     void printDemangledName(std::string const& s) {
         arena.FreeAll();
         try {
+            fflush(stdout);
+            fprintf(stderr, "demangling\n");
+            fflush(stderr);
             auto dmres = demangler::demangle(
                 demangler::StringView::FromString(s), arena);
+            fprintf(stderr, "printing\n");
+            fflush(stderr);
             demangler::printDemangledName(dmres);
             printf("\n");
+            fflush(stdout);
         } catch (std::exception const &) {
             printf("%s\n", s.c_str());
         }
@@ -46,7 +60,7 @@ class Demangler {
     demangler::Arena arena;
 };
 
-static void aggregateAndPrint(std::vector<wasmobj::Results> const &allResults, char **argv) {
+static void aggregateAndPrint(std::vector<wasmobj::Results> const &allResults, Parameters const &ctx) {
     struct Symbol {
         const char *path;
         const char *name;
@@ -57,7 +71,7 @@ static void aggregateAndPrint(std::vector<wasmobj::Results> const &allResults, c
 
     for (int idxResult = 0; idxResult < allResults.size(); ++idxResult) {
         auto &results = allResults[idxResult];
-        auto *path = argv[idxResult + 1];
+        auto *path = ctx.argv[idxResult];
 
         for (auto &fun : results.functions) {
             data.push_back({path, fun.name.c_str(), SYMBOL_FUNCTION, fun.size});
@@ -78,18 +92,22 @@ static void aggregateAndPrint(std::vector<wasmobj::Results> const &allResults, c
     for (auto &sym : data) {
         printf("  - path: %s\n", sym.path);
         printf("    name: ");
-        D.printDemangledName(sym.name);
+        if (ctx.flagDemangle) {
+            D.printDemangledName(sym.name);
+        } else {
+            printf("%s\n", sym.name);
+        }
         printf("    kind: %d\n", sym.kind);
         printf("    size: %llu\n", sym.size);
     }
 }
 
-static void printResults(std::vector<wasmobj::Results> &allResults, char **argv) {
+static void printResults(std::vector<wasmobj::Results> &allResults, Parameters const &ctx) {
     Demangler D;
 
     for (int idxResult = 0; idxResult < allResults.size(); ++idxResult) {
         auto &results = allResults[idxResult];
-        auto *path = argv[idxResult + 1];
+        auto *path = ctx.argv[idxResult];
 
         std::sort(results.functions.begin(), results.functions.end(),
                   [](auto &lhs, auto &rhs) { return rhs.size < lhs.size; });
@@ -101,7 +119,11 @@ static void printResults(std::vector<wasmobj::Results> &allResults, char **argv)
         printf("  functions:\n");
         for (auto &fun : results.functions) {
             printf("    - name: ");
-            D.printDemangledName(fun.name);
+            if (ctx.flagDemangle) {
+                D.printDemangledName(fun.name);
+            } else {
+                printf("%s\n", fun.name.c_str());
+            }
             printf("      size: %llu\n", fun.size);
         }
         printf("  data:\n");
@@ -115,32 +137,42 @@ static void printResults(std::vector<wasmobj::Results> &allResults, char **argv)
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s [-a] [inputfile [inputfile [...]]]\n", argv[0]);
+        fprintf(stderr, "Usage: %s [-ad] [inputfile [inputfile [...]]]\n", argv[0]);
+        fprintf(stderr, "  inputfile Path to a WASM object file\n");
+        fprintf(stderr, "  -a Aggregate results\n");
+        fprintf(stderr, "  -d [EXPERIMENTAL] Try to demangle symbol names\n");
         return 1;
     }
 
-    bool flagAggregate = false;
+    Parameters ctx = {};
+
+    auto argvInputFiles = std::make_unique<char *[]>(argc);
+    ctx.argv = argvInputFiles.get();
 
     for (int idxArg = 1; idxArg < argc; ++idxArg) {
         if (strcmp(argv[idxArg], "-a") == 0) {
-            flagAggregate = true;
+            ctx.flagAggregate = true;
+        } else if (strcmp(argv[idxArg], "-d") == 0) {
+            ctx.flagDemangle = true;
+        } else {
+            argvInputFiles[ctx.argc] = argv[idxArg];
+            ctx.argc++;
         }
     }
 
     std::vector<wasmobj::Results> allResults;
-    allResults.reserve(argc);
+    allResults.reserve(ctx.argc);
 
-
-    for (int idxArg = 1; idxArg < argc; ++idxArg) {
+    for (int idxArg = 0; idxArg < ctx.argc; ++idxArg) {
         auto results = wasmobj::Results();
-        wasmobj::ProcessFile(results, argv[idxArg]);
+        wasmobj::ProcessFile(results, ctx.argv[idxArg]);
         allResults.push_back(std::move(results));
     }
 
-    if (flagAggregate) {
-        aggregateAndPrint(allResults, argv);
+    if (ctx.flagAggregate) {
+        aggregateAndPrint(allResults, ctx);
     } else {
-        printResults(allResults, argv);
+        printResults(allResults, ctx);
     }
 
     return 0;
