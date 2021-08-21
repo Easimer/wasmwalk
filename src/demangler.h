@@ -25,8 +25,30 @@ struct StringView {
         return start[idx];
     }
 
+    constexpr bool StartsWith(char ch) const noexcept {
+        if (len < 1)
+            return false;
+        return start[0] == ch;
+    }
+
+    bool StartsWith(const char *ch) const noexcept {
+        if (len == 0)
+            return false;
+        unsigned i;
+        for (i = 0; ch[i] && i < len; i++) {
+            if (ch[i] != start[i])
+                return false;
+        }
+
+        return ch[i] == '\0';
+    }
+
     constexpr bool operator==(std::nullptr_t const&) const noexcept {
         return start == nullptr;
+    }
+
+    bool operator==(const char *other) const noexcept {
+        return strncmp(start, other, len) == 0;
     }
 
     StringView operator+(size_t fwd) const noexcept {
@@ -90,6 +112,9 @@ struct Node : T {
 template <typename T> struct List {
     Node<T> *head;
     Node<T> *tail;
+
+    constexpr bool Empty() const noexcept { return head == nullptr; }
+    constexpr bool NotEmpty() const noexcept { return head != nullptr; }
 };
 
 template <typename T> Node<T> *AppendNode(List<T> &list, Node<T> *node) {
@@ -116,6 +141,8 @@ enum RefQualifier {
 };
 
 struct TemplateArg;
+struct Encoding;
+struct Type;
 
 struct TemplateArgs : List<TemplateArg> {};
 
@@ -125,13 +152,77 @@ struct NestedName {
     bool qConst;
     RefQualifier qRef;
 
-    StringView builtIn;
     List<StringView> name;
     TemplateArgs templateArgs;
 };
 
+struct ParameterPackExpansion {
+    Type *type;
+};
+
+struct Type {
+    enum {
+        UNINITIALIZED,
+        BUILTIN,
+        QUALIFIED,
+        TEMPLATE_ARGUMENT,
+        PARAMETER_PACK_EXPANSION,
+        FUNCTION_POINTER,
+    } tag;
+
+    bool qRestrict;
+    bool qVolatile;
+    bool qConst;
+
+    int levelsOfIndirection;
+    RefQualifier refQualifier;
+
+    union {
+        StringView builtIn;
+        NestedName qualified;
+        unsigned templateArgumentIndex;
+        ParameterPackExpansion parameterPackExpansion;
+    };
+};
+
+struct Literal {
+    enum {
+        UNINITIALIZED,
+        INTEGER_LITERAL,
+        FLOATING_LITERAL,
+        STRING_LITERAL,
+        NULLPTR_LITERAL,
+        NULL_POINTER,
+        // COMPLEX_LITERAL,
+        EXTERNAL_NAME,
+    } tag;
+
+    union {
+        struct {
+            StringView type;
+            union {
+                double valueFloat;
+                long long valueInteger;
+                unsigned long long valueUInteger;
+            };
+        } number;
+        Encoding *externalName;
+    };
+};
+
 struct TemplateArg {
-    NestedName name;
+    enum {
+        UNINITIALIZED,
+        NESTED_NAME,
+        LITERAL,
+        TYPE,
+    } tag;
+
+    union {
+        Type type;
+        NestedName name;
+        Literal literal;
+    };
 };
 
 struct Name {
@@ -149,7 +240,8 @@ struct Name {
 };
 
 struct BareFunctionType {
-    List<NestedName> argumentTypes;
+    Type returnType;
+    List<Type> argumentTypes;
 };
 
 struct Encoding {
@@ -161,6 +253,14 @@ struct DemangledName {
     StringView cname;
     Encoding encoding;
     StringView vendorSuffix;
+};
+
+class Visitor {
+  public:
+    virtual ~Visitor() = default;
+
+    virtual void Visit(DemangledName const &dm) = 0;
+    virtual void Visit(Encoding const &enc) = 0;
 };
 
 DemangledName demangle(StringView mangledName, Arena arena);

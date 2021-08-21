@@ -16,3 +16,9 @@ target_sources(wasmwalk
     src/types.h
     src/wasm.h
 )
+
+add_executable(demangler_test
+	src/demangler_test.cpp
+    src/demangler.cpp
+    src/demangler.h
+)
