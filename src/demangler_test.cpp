@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <memory>
+#include <cstdio>
 
 #include "demangler.h"
 

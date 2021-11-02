@@ -1,5 +1,6 @@
 #include <unordered_map>
 #include <memory>
+#include <cstring>
 
 #include "reader.h"
 #include "wasmobj.h"
